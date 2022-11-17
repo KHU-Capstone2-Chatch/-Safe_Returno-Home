@@ -1,0 +1,23 @@
+.container {
+    height: 100vh;
+    display: flex;
+    align-items: center;
+    flex-direction: column;
+    padding: 80px 50px;
+    background: linear-gradient(#AAC1F1, #80F0DB);
+}
+
+.textBox {
+    margin-bottom: 20px;
+}
+
+.primaryButton {
+    margin-bottom: 20px;
+    background-color: #4270CC;
+    color: #fff;
+}
+.secondButton {
+    margin-bottom: 20px;
+    background-color: #49C7A1;
+    color: #000;
+}

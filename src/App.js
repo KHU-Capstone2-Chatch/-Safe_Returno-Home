@@ -1,38 +1,70 @@
-import logo from './logo.svg';
 import './App.css';
-import React, { useCallback, useEffect, useRef } from "react";
+import React, {useCallback, useEffect, useRef, useState} from "react";
 import {Routes, Route} from "react-router-dom";
-import axios from 'axios';
 
-import Login from "./Pages/Login";
-import SignUp from "./Pages/SignUp";
-import Home from "./Pages/Home";
-import NotFound from "./Pages/NotFound";
+import Login from "./pages/Login";
+import SignUp from "./pages/SignUp";
+import Home from "./pages/Home";
+import NotFound from "./pages/NotFound";
 
 // Import the functions you need from the SDKs you need
 import { initializeApp } from "firebase/app";
+import { getFirestore } from "firebase/firestore";
 import { getAnalytics } from "firebase/analytics";
 
+import {IconButton, Snackbar} from "@mui/material";
+import CloseIcon from '@mui/icons-material/Close';
+
+
 const firebaseConfig = {
-    apiKey: "AIzaSyBLfQFVnh6klFxxhFQqqFS31eBaKV4m91o",
-    authDomain: "safe-return-home.firebaseapp.com",
-    projectId: "safe-return-home",
-    storageBucket: "safe-return-home.appspot.com",
-    messagingSenderId: "710952552263",
-    appId: "1:710952552263:web:fa679c633e7bc403e86e62",
-    measurementId: "G-GSS2L75SDM"
+    apiKey: "AIzaSyCBmxBKexmyU8z32SLFEKJMyanvbgtgc5o",
+    authDomain: "safe-return-home-9a990.firebaseapp.com",
+    projectId: "safe-return-home-9a990",
+    storageBucket: "safe-return-home-9a990.appspot.com",
+    messagingSenderId: "77493074863",
+    appId: "1:77493074863:web:abfeab5e3f725c8e498d5a",
+    measurementId: "G-C4JZN5HQXR"
 };
 
 const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
 
 function App() {
+    const [open, setOpen] = useState(false)
+    const [message, setMessage] = useState('')
+
+    const openAlert = (message) => {
+        setMessage(message);
+        setOpen(true);
+    }
+
     return (
-        <Routes>
-            <Route path="/" exact={true} element={<Login />} />
-            <Route path="/signUp" exact={true} element={<SignUp />} />
-            <Route path="/home" element={<Home />} />
-            <Route path="*" element={<NotFound />} />
-        </Routes>
+        <div>
+            <Routes>
+                <Route path="/login" exact={true} element={<Login />} />
+                <Route path="/signUp" exact={true} element={<SignUp db={db} openAlert={openAlert}/>} />
+                <Route path="/" element={<Home />} />
+                <Route path="*" element={<NotFound />} />
+            </Routes>
+
+
+            <Snackbar
+                anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
+                open={open}
+                color='primary'
+                autoHideDuration={5000}
+                onClose={() => {setOpen(false)}}
+                message={message}
+                action={<IconButton
+                    size="small"
+                    aria-label="close"
+                    color="inherit"
+                    onClick={() => {setOpen(false)}}
+                >
+                    <CloseIcon fontSize="small" />
+                </IconButton>}
+            />
+        </div>
     );
 }
 
