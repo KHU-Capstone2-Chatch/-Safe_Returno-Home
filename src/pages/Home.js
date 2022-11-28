@@ -1,4 +1,4 @@
-import React, {useEffect, useState} from "react";
+import React, {useEffect, useLayoutEffect, useMemo, useState} from "react";
 import {
     AppBar,
     Box,
@@ -7,7 +7,7 @@ import {
     DialogActions,
     DialogContent,
     DialogContentText,
-    DialogTitle,
+    DialogTitle, Divider,
     Fab,
     IconButton,
     List,
@@ -26,28 +26,45 @@ import MyLocationIcon from '@mui/icons-material/MyLocation';
 import LocationOnIcon from '@mui/icons-material/LocationOn';
 import LocationOffIcon from '@mui/icons-material/LocationOff';
 import axios from "axios";
+import { getMessaging } from "firebase/messaging";
+import {useNavigate, useLocation} from "react-router-dom";
+import User from "./User";
+import {doc, setDoc, updateDoc} from "firebase/firestore";
 
-axios.defaults. withCredentials = true;
+axios.defaults.withCredentials = false;
 
 let myMap;
 let watchId;
+let intervalId;
 
-function Home() {
+function Home({db, openAlert}) {
+    const navigate = useNavigate();
+    const location = useLocation();
+
     const [startAt, setStartAt] = useState('');
     const [startMarker, setStartMarker] = useState(null);
     const [endAt, setEndAt] = useState('');
     const [endMarker, setEndMarker] = useState(null);
+
     const [searchMarkerList, setSearchMarkerList] = useState([]);
     const [showSearchModal, setShowSearchModal] = useState(false);
+    const [showUserModal, setShowUserModal] = useState(false);
+
     const [searchType, setSearchType] = useState('start');
     const [searchKeyword, setSearchKeyword] = useState('');
+
     const [routeList, setRouteList] = useState([]);
     const [routeLine, setRouteLine] = useState();
+
     const [isRouting, setIsRouting] = useState(false);
     const [currentMarker, setCurrentMarker] = useState(null);
 
     const [showAlertModal, setShowAlertModal] = useState(false)
     const [count, setCount] = useState(10);
+
+    const [currentLocation, setCurrentLocation] = useState(null);
+
+    const [me, setMe] = useState(null);
 
     const initmap = () => {
         myMap = new window.Tmapv2.Map("map_div", {
@@ -60,6 +77,14 @@ function Home() {
         setTimeout(() => {
             getCurrentPosition();
         }, 0)
+    }
+
+    const initUser = async () => {
+        await setDoc(doc(db, "Routes", 'test'), {
+            isDanger: false,
+            isRouting: false,
+            currentLocation: null
+        });
     }
 
     const addMarker = (lat, lng, name, imgUrl) => {
@@ -80,7 +105,7 @@ function Home() {
         deleteSearchMarkers();
 
         let params = {
-            "appKey" : "l7xx30fc88d17c88405290230f63192bccdc",
+            "appKey" : process.env.REACT_APP_TMAP_APP_KEY,
             "searchKeyword" : searchKeyword,
             "resCoordType" : "EPSG3857",
             "reqCoordType" : "WGS84GEO",
@@ -91,11 +116,11 @@ function Home() {
             .map(k => encodeURIComponent(k) + '=' + encodeURIComponent(params[k]))
             .join('&');
 
-        let url = '/tmap/pois?version=1&format=json&callback=result&' + query;
+        let url = process.env.REACT_APP_TMAP_API_ROUTE + '/tmap/pois?version=1&format=json&callback=result&' + query;
 
         try {
             let response = await axios.get(url, {
-                withCredentials: true,
+                withCredentials: false,
             });
             console.log(response)
             let resultPositionData = response.data.searchPoiInfo.pois.poi;
@@ -183,30 +208,41 @@ function Home() {
     }
 
     const getCurrentPosition = () => {
-        if (isRouting) {
-            myMap.setCenter(new window.Tmapv2.LatLng(currentMarker.lat, currentMarker.lng))
-            return;
-        }
         if (window.navigator.geolocation) {
-            window.navigator.geolocation.getCurrentPosition((position) => {
+            watchId = window.navigator.geolocation.watchPosition((position) => {
+                console.log(position.coords)
                 let lat = position.coords.latitude
                 let lng = position.coords.longitude
+                setCurrentLocation({lat, lng})
                 if (!currentMarker) {
                     let myMarker = addMarker(lat, lng, 'current', 'http://tmapapi.sktelecom.com/upload/tmap/marker/pin_r_m_m.png')
                     setCurrentMarker({lat, lng, marker: myMarker})
+                    myMap.setCenter(new window.Tmapv2.LatLng(lat, lng))
                 } else {
                     currentMarker.marker.setPosition(new window.Tmapv2.LatLng(lat, lng))
                 }
-                myMap.setCenter(new window.Tmapv2.LatLng(lat, lng))
+                saveCurrentPosition({lat, lng});
             }, (error) => {
                 console.error(error);
             }, {
                 enableHighAccuracy: true,
                 maximumAge: 0,
-                timeout: Infinity
+                timeout: Infinity,
             });
         } else {
             alert('GPS를 지원하지 않습니다');
+        }
+    }
+
+    const saveCurrentPosition = async (location) => {
+        await updateDoc(doc(db, "Routes", 'test'), {
+            currentLocation: location
+        });
+    }
+
+    const goCurrentPosition = () => {
+        if (currentLocation) {
+            myMap.setCenter(new window.Tmapv2.LatLng(currentLocation.lat, currentLocation.lng))
         }
     }
 
@@ -218,7 +254,7 @@ function Home() {
             return;
         }
         try {
-            let url = '/tmap/routes/pedestrian?version=1&format=json&callback=result&appKey=l7xx30fc88d17c88405290230f63192bccdc'
+            let url = process.env.REACT_APP_TMAP_API_ROUTE + '/tmap/routes/pedestrian?version=1&format=json&callback=result&appKey=' + process.env.REACT_APP_TMAP_APP_KEY
             let response = await axios.post(url, {
                 // appKey : "",
                 "startX" : startMarker.lng.toString(),
@@ -230,7 +266,7 @@ function Home() {
                 "startName" : "출발지",
                 "endName" : "도착지"
             },{
-                withCredentials: true,
+                withCredentials: false,
             });
 
             let drawInfoArr = [];
@@ -292,37 +328,22 @@ function Home() {
         }
     }
 
-    const startRouting = () => {
+    const startRouting = async () => {
         setIsRouting(true);
-        if (window.navigator.geolocation) {
-            watchId = window.navigator.geolocation.watchPosition((position) => {
-                let lat = position.coords.latitude
-                let lng = position.coords.longitude
-                console.log(position.coords.latitude, position.coords.longitude)
-                if (!currentMarker) {
-                    let myMarker = addMarker(lat, lng, 'current', 'http://tmapapi.sktelecom.com/upload/tmap/marker/pin_r_m_0.png')
-                    setCurrentMarker({lat, lng, marker: myMarker})
-                } else {
-                    currentMarker.marker.setPosition(new window.Tmapv2.LatLng(lat, lng))
-                }
-                myMap.setCenter(new window.Tmapv2.LatLng(lat, lng))
-                focusOnMarker([{lat, lng}])
-            }, (error) => {
-                console.error(error);
-            }, {
-                enableHighAccuracy: true,
-                maximumAge: 0,
-                timeout: Infinity
-            });
-        } else {
-            alert('GPS를 지원하지 않습니다');
-        }
+        myMap.setCenter(new window.Tmapv2.LatLng(currentLocation.lat, currentLocation.lng))
+        intervalId = setInterval(() => {
+            if (checkOffPath()) {
+                openAlertModal()
+            }
+        }, 1000)
+        await updateDoc(doc(db, "Routes", 'test'), {
+            isRouting: true
+        });
     }
 
-    const stopRouting = () => {
+    const stopRouting = async () => {
+        clearInterval(intervalId)
         setIsRouting(false);
-        setCurrentMarker(null)
-        window.navigator.geolocation.clearWatch(watchId);
     }
 
     const initState = () => {
@@ -356,7 +377,6 @@ function Home() {
                 minDistance = distance
             }
         }
-        console.log(minDistance)
         return minDistance >= 500;
     }
 
@@ -385,8 +405,11 @@ function Home() {
             time -= 1
             setCount(time)
             if (time <= 0) {
-                clearInterval(refreshIntervalId)
-                closeAlertModal()
+                clearInterval(refreshIntervalId);
+                closeAlertModal();
+                sendChatAlert();
+                showNotification();
+                stopRouting();
             }
         }, 1000)
     }
@@ -397,58 +420,71 @@ function Home() {
     }
 
     const sendChatAlert = async () => {
-        try {
-            let url = '/v2/api/talk/memo/send'
-            const res = await axios.post(url, {
-                'template_id' : '85793',
-                'template_args' : {
-                    'userName': '김서영',
-                    'UserCurrentPosition': '경희대학교 국제캠퍼스'
-                }
-            }, {
-                headers: {
-                    "Authorization": "Bearer " + '093f5a5a8f8ae8a043ff32f4e25a4d6b'
-                },
-                withCredentials: true
-            })
-            console.log(res)
-        } catch (e) {
-            console.error(e);
-        }
+        await updateDoc(doc(db, "Routes", 'test'), {
+            isDanger: true
+        });
+    }
+
+    const showNotification = () => {
+        openAlert('🚨 사용자에게 위험이 감지 되었습니다!', 'error');
+    };
+
+    const goUser = () => {
+        setShowUserModal(true);
     }
 
     useEffect(() => {
+        setMe(location.state?.user)
         if (!myMap) {
             initmap();
+            initUser();
+        }
+
+        return () => {
+            window.navigator.geolocation.clearWatch(watchId);
+            initUser();
+            if (currentMarker) {
+                currentMarker.marker.setMap(null)
+            }
         }
     }, [])
 
     return (
         <div>
-            <div style={{position: 'fixed', zIndex: 1}}>
-                <div style={{width: '100%', display: 'flex', flexDirection: 'row', justifyContent: 'flex-end', height: 50, backgroundColor: '#AAC1F1'}}>
-                    <IconButton onClick={sendChatAlert} style={{width: 50}}>
-                        <PersonIcon color='#4270CC' fontSize="inherit" />
-                    </IconButton>
-                </div>
-                <div style={{display: isRouting ? 'none' : 'flex', flexDirection: 'row', justifyContent: 'center', padding: 10, paddingLeft: 20, backgroundColor: '#fff'}}>
-                    <div>
-                        <TextField id="outlined-basic" type="text" placeholder="출발지" variant="outlined" size='small' fullWidth value={startAt} style={{backgroundColor: 'white', marginBottom: 5}} onClick={() => {setShowSearchModal(true); setSearchType('start');}} />
-                        <TextField id="outlined-basic" type="text" placeholder="도착지" variant="outlined" size='small' fullWidth value={endAt} style={{backgroundColor: 'white', marginTop: 5}} onClick={() => {setShowSearchModal(true); setSearchType('end');}} />
+            {
+                me?.type === 'safeUser' ?
+                    <div style={{width: '100%', display: 'flex', flexDirection: 'row', justifyContent: 'flex-end', height: 50, backgroundColor: '#AAC1F1'}}>
+                        <IconButton onClick={goUser} style={{width: 50}}>
+                            <PersonIcon color='#4270CC' fontSize="inherit" />
+                        </IconButton>
                     </div>
-                    <IconButton onClick={calcRoute} color='primary' style={{margin: 10}} disabled={routeLine === null}>
-                        <AltRouteIcon color='#4270CC' fontSize="inherit"/>
-                    </IconButton>
-                    {
-                        startMarker || endMarker || routeLine ?
-                            <Fab variant="extended" color='secondary' size='small' sx={{position: 'absolute', top: 180, left: 20}} onClick={initState}>
-                                <span style={{margin: 3}}>초기화</span>
-                            </Fab> : null
-                    }
-                </div>
-            </div>
+                    :
+                    <div style={{position: 'fixed', zIndex: 1, backgroundColor: '#AAC1F1'}}>
+                        <div style={{width: '100%', display: 'flex', flexDirection: 'row', justifyContent: 'flex-end', height: 50}}>
+                            <IconButton onClick={goUser} style={{width: 50}}>
+                                <PersonIcon color='#4270CC' fontSize="inherit" />
+                            </IconButton>
+                        </div>
+                        <Divider/>
+                        <div style={{display: isRouting ? 'none' : 'flex', flexDirection: 'row', justifyContent: 'center', padding: 10, paddingLeft: 20}}>
+                            <div>
+                                <TextField id="outlined-basic" type="text" placeholder="출발지" variant="outlined" size='small' fullWidth value={startAt} style={{marginBottom: 5}} onClick={() => {setShowSearchModal(true); setSearchType('start');}} />
+                                <TextField id="outlined-basic" type="text" placeholder="도착지" variant="outlined" size='small' fullWidth value={endAt} style={{marginTop: 5}} onClick={() => {setShowSearchModal(true); setSearchType('end');}} />
+                            </div>
+                            <IconButton onClick={calcRoute} color='primary' style={{margin: 10}} disabled={routeLine === null}>
+                                <AltRouteIcon color='#4270CC' fontSize="inherit"/>
+                            </IconButton>
+                            {
+                                startMarker || endMarker || routeLine ?
+                                    <Fab variant="extended" color='secondary' size='small' sx={{position: 'absolute', top: 180, left: 20}} onClick={initState}>
+                                        <span style={{margin: 3}}>초기화</span>
+                                    </Fab> : null
+                            }
+                        </div>
+                    </div>
+            }
 
-            <Fab size='medium' sx={{position: 'absolute', bottom: 20, left: 20}} onClick={getCurrentPosition}>
+            <Fab size='medium' sx={{position: 'absolute', bottom: 20, left: 20}} onClick={goCurrentPosition}>
                 <MyLocationIcon />
             </Fab>
             <span style={{display: routeLine ? 'flex' : 'none'}}>
@@ -504,6 +540,13 @@ function Home() {
             </Dialog>
 
             <Dialog
+                fullScreen
+                open={showUserModal}
+            >
+                <User user={me} close={() => {setShowUserModal(false)}} />
+            </Dialog>
+
+            <Dialog
                 open={showAlertModal}
                 aria-labelledby="alert-dialog-title"
                 aria-describedby="alert-dialog-description"
@@ -526,14 +569,8 @@ function Home() {
             <div
                 id='map_div'
             />
-            <div>
-            </div>
         </div>
     )
 }
 
 export default Home;
-
-// NCS9LF06DUJYWFHQ
-//
-// LDEWK2QENQE6RAJVRAFM0JIOTUJMTUDE
