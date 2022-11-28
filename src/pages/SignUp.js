@@ -1,8 +1,8 @@
-import React, {useState} from "react";
-import {Box, Button, Snackbar, TextField} from "@mui/material";
+import React, {useEffect, useState} from "react";
+import {Box, Button, FormControlLabel, Radio, RadioGroup, Snackbar, TextField} from "@mui/material";
 import {useNavigate} from "react-router-dom";
 import { getAuth, createUserWithEmailAndPassword } from "firebase/auth";
-import { collection, addDoc } from "firebase/firestore";
+import { collection, addDoc, setDoc, doc } from "firebase/firestore";
 import '../styles/main.css';
 
 function SignUp({db, openAlert}) {
@@ -11,6 +11,8 @@ function SignUp({db, openAlert}) {
     const [id, setId] = useState('');
     const [password, setPassword] = useState('');
     const [phone, setPhone] = useState('');
+    const [type, setType] = useState('user');
+    const [safeUserId, setSafeUserId] = useState('');
 
     const signUp = () => {
         const auth = getAuth();
@@ -19,7 +21,7 @@ function SignUp({db, openAlert}) {
                 const user = userCredential.user;
                 console.log(user)
                 createUserData();
-                openAlert('회원가입 성공!');
+                openAlert('회원가입 성공!', null);
                 goToLogin();
             })
             .catch((error) => {
@@ -29,9 +31,10 @@ function SignUp({db, openAlert}) {
 
     const createUserData = async () => {
         try {
-            const docRef = await addDoc(collection(db, "Users"), {
-                phone,
+            await setDoc(doc(db, "Users", id), {
                 id,
+                type,
+                safeUserId,
             });
         } catch (error) {
             console.error(error);
@@ -39,7 +42,9 @@ function SignUp({db, openAlert}) {
     }
 
     const goToLogin = () => {
-        navigate('/login')
+        navigate('/login', {
+            state: {db, openAlert}
+        })
     }
 
     return (
@@ -48,7 +53,20 @@ function SignUp({db, openAlert}) {
             <Box width='100%' height='50%' style={{paddingTop: 60}}>
                 <TextField id="outlined-basic" type="text" label="아이디" variant="outlined" onChange={(e) => {setId(e.target.value)}}  fullWidth style={styles.textBox} />
                 <TextField id="outlined-basic" type="password" label="비밀번호" variant="outlined" onChange={(e) => {setPassword(e.target.value)}} fullWidth style={styles.textBox} />
-                <TextField id="outlined-basic" type="number" label="보호자 전화번호" variant="outlined" onChange={(e) => {setPhone(e.target.value)}} fullWidth style={styles.textBox} />
+                {/*<TextField id="outlined-basic" type="number" label="보호자 전화번호" variant="outlined" onChange={(e) => {setPhone(e.target.value)}} fullWidth style={styles.textBox} />*/}
+                <RadioGroup
+                    row
+                    aria-labelledby="demo-row-radio-buttons-group-label"
+                    name="row-radio-buttons-group"
+                >
+                    <FormControlLabel value="user" control={<Radio />} label="사용자" checked={type === 'user'} onChange={() => {setType('user')}} />
+                    <FormControlLabel value="safeUser" control={<Radio />} label="보호자" checked={type === 'safeUser'} onChange={() => {setType('safeUser')}} />
+                </RadioGroup>
+                {
+                    type === 'user' ?
+                    <TextField id="outlined-basic" type="text" label="보호자 ID" variant="outlined" onChange={(e) => {setSafeUserId(e.target.value)}} fullWidth style={styles.textBox} />
+                    : null
+                }
             </Box>
             <Box width='100%' style={{paddingTop: 10}}>
                 <Button variant="contained" onClick={signUp} fullWidth style={styles.primaryButton} >회원가입 완료</Button>

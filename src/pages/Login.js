@@ -2,9 +2,10 @@ import React, {useState} from "react";
 import { getAuth, signInWithEmailAndPassword } from "firebase/auth";
 import {useNavigate} from "react-router-dom";
 import {Box, Button, styled, TextField} from "@mui/material";
+import { getDoc, doc } from "firebase/firestore";
 import '../styles/main.css';
 
-function Login() {
+function Login({db, openAlert}) {
     const navigate = useNavigate();
 
     const [id, setId] = useState('r@gmail.com');
@@ -13,26 +14,41 @@ function Login() {
     const signIn = () => {
         const auth = getAuth();
         signInWithEmailAndPassword(auth, id + '@gmail.com', password)
-            .then((userCredential) => {
+            .then(async (userCredential) => {
                 // Signed in
-                const user = userCredential.user;
-                // ...
-                console.log(user)
-                goToHome();
+                console.log(userCredential.user)
+                const user = await getUserData();
+                goToHome(user);
             })
             .catch((error) => {
-                const errorCode = error.code;
-                const errorMessage = error.message;
-                console.log(errorMessage)
+                console.error(error)
             });
     }
 
-    const goToSignUp = () => {
-        navigate('/signUp')
+    const getUserData = async () => {
+        const docRef = doc(db, "Users", id);
+        const docSnap = await getDoc(docRef);
+        let user;
+
+        if (docSnap.exists()) {
+            user = docSnap.data();
+            goToHome(user);
+        } else {
+            console.log("No such document!");
+        }
+        return user
     }
 
-    const goToHome = () => {
-        navigate('/')
+    const goToSignUp = () => {
+        navigate('/signUp');
+    }
+
+    const goToHome = (user) => {
+        if (user?.type === 'safeUser') {
+            navigate('/safeUser', {state: {user: user}});
+        } else {
+            navigate('/', {state: {user: user}});
+        }
     }
 
     return (

@@ -13,4 +13,10 @@ module.exports = (app) => {
             changeOrigin: true,
         })
     );
+    app.use(
+        createProxyMiddleware('/messages', {
+            target: 'https://api.solapi.com',
+            changeOrigin: true,
+        })
+    );
 };
