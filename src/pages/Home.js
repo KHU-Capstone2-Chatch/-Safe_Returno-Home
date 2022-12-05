@@ -66,6 +66,8 @@ function Home({db, openAlert}) {
 
     const [me, setMe] = useState(null);
 
+    const [loading, setLoading] = useState(true)
+
     const initmap = () => {
         myMap = new window.Tmapv2.Map("map_div", {
             center: new window.Tmapv2.LatLng(37.52084364186228,127.058908811749),
@@ -74,9 +76,9 @@ function Home({db, openAlert}) {
             zoom: 15,
             zoomControl : true,
         });
-        setTimeout(() => {
-            getCurrentPosition();
-        }, 0)
+
+        let myMarker = addMarker(37.52084364186228,127.058908811749, 'current', 'http://tmapapi.sktelecom.com/upload/tmap/marker/pin_r_m_m.png')
+        setCurrentMarker({lat: 37.52084364186228, lng: 127.058908811749, marker: myMarker})
     }
 
     const initUser = async () => {
@@ -207,20 +209,20 @@ function Home({db, openAlert}) {
         setSearchMarkerList([]);
     }
 
+    const setMarker = (lat, lng) => {
+        currentMarker.marker.setPosition(new window.Tmapv2.LatLng(lat, lng))
+        setCurrentMarker({...currentMarker, lat: 37.52084364186228, lng: 127.058908811749})
+    }
+
     const getCurrentPosition = () => {
         if (window.navigator.geolocation) {
             watchId = window.navigator.geolocation.watchPosition((position) => {
-                console.log(position.coords)
+                console.log(currentMarker)
                 let lat = position.coords.latitude
                 let lng = position.coords.longitude
                 setCurrentLocation({lat, lng})
-                if (!currentMarker) {
-                    let myMarker = addMarker(lat, lng, 'current', 'http://tmapapi.sktelecom.com/upload/tmap/marker/pin_r_m_m.png')
-                    setCurrentMarker({lat, lng, marker: myMarker})
-                    myMap.setCenter(new window.Tmapv2.LatLng(lat, lng))
-                } else {
-                    currentMarker.marker.setPosition(new window.Tmapv2.LatLng(lat, lng))
-                }
+                myMap.setCenter(new window.Tmapv2.LatLng(lat, lng))
+                setMarker(lat, lng)
                 saveCurrentPosition({lat, lng});
             }, (error) => {
                 console.error(error);
@@ -366,32 +368,55 @@ function Home({db, openAlert}) {
     }
 
     const checkOffPath = () => {
-        let minDistance = 500;
+        let minDistance = 50;
         for (const route of routeList) {
             let lat = route._lat;
             let lng = route._lng;
-
-            let distance = computeDistance(currentMarker, {lat, lng});
+            // addMarker(lat, lng, 'current', 'http://tmapapi.sktelecom.com/upload/tmap/marker/pin_r_m_m.png')
+            let distance = computeDistance(currentMarker.lat, currentMarker.lng, lat, lng);
             // console.log(distance + 'm')
             if (minDistance > distance) {
                 minDistance = distance
             }
+            console.log(lat, lng, distance)
+            // console.log(distance)
         }
-        return minDistance >= 500;
+        return minDistance >= 50;
     }
 
-    function computeDistance(startCoords, destCoords) {
-        let startLatRads = degreesToRadians(startCoords.lat);
-        let startLongRads = degreesToRadians(startCoords.lng);
-        let destLatRads = degreesToRadians(destCoords.lat);
-        let destLongRads = degreesToRadians(destCoords.lng);
+    function getDistance(lat1, lon1, lat2, lon2) {
+        if ((lat1 === lat2) && (lon1 === lon2))
+            return 0;
+
+        var radLat1 = Math.PI * lat1 / 180;
+        var radLat2 = Math.PI * lat2 / 180;
+        var theta = lon1 - lon2;
+        var radTheta = Math.PI * theta / 180;
+        var dist = Math.sin(radLat1) * Math.sin(radLat2) + Math.cos(radLat1) * Math.cos(radLat2) * Math.cos(radTheta);
+        if (dist > 1)
+            dist = 1;
+
+        dist = Math.acos(dist);
+        dist = dist * 180 / Math.PI;
+        dist = dist * 60 * 1.1515 * 1.609344 * 1000;
+        if (dist < 100) dist = Math.round(dist / 10) * 10;
+        else dist = Math.round(dist / 100) * 100;
+
+        return (1 / dist) * 1000;
+    }
+
+    function computeDistance(lat1, lng1, lat2, lng2) {
+        let startLatRads = degreesToRadians(lat1);
+        let startLongRads = degreesToRadians(lng1);
+        let destLatRads = degreesToRadians(lat2);
+        let destLongRads = degreesToRadians(lng2);
 
         let Radius = 6371; //지구의 반경(km)
         let distance = Math.acos(Math.sin(startLatRads) * Math.sin(destLatRads) +
             Math.cos(startLatRads) * Math.cos(destLatRads) *
             Math.cos(startLongRads - destLongRads)) * Radius;
 
-        return distance * 1000;
+        return (1 / distance) * 1000;
     }
 
     function degreesToRadians(degrees) {
@@ -448,6 +473,18 @@ function Home({db, openAlert}) {
             }
         }
     }, [])
+
+    useEffect(() => {
+        if (currentMarker !== null) {
+            getCurrentPosition();
+            setLoading(false)
+        }
+    }, [currentMarker])
+
+    // useEffect(() => {
+    //     if (currentLocation !== null && !loading) {
+    //     }
+    // }, [currentLocation])
 
     return (
         <div>
